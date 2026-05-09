@@ -3,6 +3,10 @@
 > A browser-based distributed-systems simulator with chaos engineering. Build topologies on a canvas, watch traffic flow tick by tick, then break things and see how the metrics react.
 
 Vanilla TypeScript + Vite + a single `<canvas>`. No UI framework, no backend simulation — the entire model runs in the browser. Production is a static bundle behind a tiny Express server.
+<img width="1660" height="876" alt="image" src="https://github.com/user-attachments/assets/cdf85b1b-6b25-45c3-ad09-c8f14ea1bd15" />
+
+<img width="1677" height="871" alt="image" src="https://github.com/user-attachments/assets/9d34733e-a07d-4b36-a5fc-7d58e120a7f4" />
+
 
 ---
 
