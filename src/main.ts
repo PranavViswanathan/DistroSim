@@ -1,15 +1,19 @@
 import { CanvasRenderer, type PendingEdge } from './canvas';
 import {
-  cascadeFailure,
+  CHAOS_CATALOG,
+  type ChaosCatalogEntry,
+  type ChaosCategory,
+  clearEdgeEffects,
+  clearNodeEffects,
   exportTopology,
   importTopology,
   injectLatencySpike,
   killNode,
-  partitionBetween,
   partitionEdge,
   pushEvent,
   recoverNode,
   tickChaos,
+  triggerChaos,
 } from './chaos';
 import { makeEdge } from './edges';
 import {
@@ -39,7 +43,6 @@ import {
 import {
   CATEGORY,
   CATEGORY_COLOR,
-  type ChaosMode,
   type NodeType,
   type Selection,
   type SimEdge,
@@ -64,8 +67,9 @@ class App {
   draggingNode: { nodeId: string; offsetX: number; offsetY: number } | null = null;
   panning: { startX: number; startY: number } | null = null;
   spacePressed = false;
-  chaosMode: ChaosMode = null;
+  chaosMode: ChaosCatalogEntry | null = null;
   partitionFirstNodeId: string | null = null;
+  chaosCategory: ChaosCategory = 'infra';
   undoStack: string[] = [];
   tickIntervalId: number | null = null;
   lastFrameTime = 0;
@@ -131,6 +135,16 @@ class App {
     window.addEventListener('keyup', e => this.onKeyUp(e));
 
     byId<HTMLButtonElement>('sim-toggle').addEventListener('click', () => this.toggleSim());
+    byId<HTMLButtonElement>('sim-stop').addEventListener('click', () => this.stopAndReport());
+    byId<HTMLButtonElement>('status-modal-close').addEventListener('click', () => this.closeStatusReport());
+    byId<HTMLButtonElement>('status-modal-ok').addEventListener('click', () => this.closeStatusReport());
+    byId<HTMLButtonElement>('status-modal-resume').addEventListener('click', () => {
+      this.closeStatusReport();
+      if (!this.state.running) this.toggleSim();
+    });
+    byId<HTMLElement>('status-modal').addEventListener('click', e => {
+      if (e.target === e.currentTarget) this.closeStatusReport();
+    });
     const tickRange = byId<HTMLInputElement>('tick-rate');
     const tickVal = byId<HTMLElement>('tick-rate-val');
     tickRange.addEventListener('input', () => {
@@ -165,12 +179,16 @@ class App {
       importInput.value = '';
     });
 
-    document.querySelectorAll<HTMLButtonElement>('.chaos-btn').forEach(btn => {
+    document.querySelectorAll<HTMLButtonElement>('.chaos-tab').forEach(btn => {
       btn.addEventListener('click', () => {
-        const mode = btn.dataset.chaos as ChaosMode;
-        this.activateChaos(mode);
+        const cat = btn.dataset.chaosTab as ChaosCategory;
+        this.chaosCategory = cat;
+        document.querySelectorAll('.chaos-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.populateChaosList();
       });
     });
+    this.populateChaosList();
 
     byId<HTMLElement>('sparkpanel-header').addEventListener('click', () => {
       this.sparkpanelEl.classList.toggle('collapsed');
@@ -207,9 +225,9 @@ class App {
     body.innerHTML = '';
     const groups: Array<{ title: string; types: NodeType[] }> = [
       { title: 'Clients', types: ['Client'] },
-      { title: 'Compute', types: ['LoadBalancer', 'APIServer'] },
-      { title: 'Data', types: ['DBPrimary', 'DBReplica'] },
-      { title: 'Infra', types: ['Cache', 'Queue', 'CDN'] },
+      { title: 'Compute', types: ['LoadBalancer', 'APIServer', 'AppServer', 'ServiceMesh', 'RateLimiter', 'AuthService', 'WAF'] },
+      { title: 'Data', types: ['DBPrimary', 'DBReplica', 'KeyValueStore', 'ObjectStore', 'SearchIndex'] },
+      { title: 'Infra', types: ['Cache', 'Queue', 'MessageBroker', 'CDN', 'DNS', 'ConfigStore'] },
     ];
     for (const group of groups) {
       const section = document.createElement('div');
@@ -378,52 +396,8 @@ class App {
     }
 
     // Chaos modes intercept clicks
-    if (this.chaosMode === 'kill') {
-      const node = this.renderer.pickNode(this.state, cursor.wx, cursor.wy);
-      if (node) {
-        this.snapshot();
-        killNode(this.state, node.id);
-        this.chaosMode = null;
-        this.toast(`killed ${node.label}`);
-        this.refreshInspector();
-      } else {
-        this.cancelChaos();
-      }
-      return;
-    }
-    if (this.chaosMode === 'partition') {
-      const node = this.renderer.pickNode(this.state, cursor.wx, cursor.wy);
-      if (node) {
-        if (!this.partitionFirstNodeId) {
-          this.partitionFirstNodeId = node.id;
-          this.toast(`partition: select target for ${node.label}`);
-          return;
-        }
-        if (this.partitionFirstNodeId === node.id) {
-          this.toast('pick a different node');
-          return;
-        }
-        this.snapshot();
-        const ok = partitionBetween(this.state, this.partitionFirstNodeId, node.id);
-        if (!ok) this.toast('no edge between those nodes');
-        else this.toast('partition injected');
-        this.partitionFirstNodeId = null;
-        this.chaosMode = null;
-      } else {
-        this.cancelChaos();
-      }
-      return;
-    }
-    if (this.chaosMode === 'latency') {
-      const edge = this.renderer.pickEdge(this.state, cursor.wx, cursor.wy);
-      if (edge) {
-        this.snapshot();
-        injectLatencySpike(this.state, edge.id);
-        this.toast('latency spike for 10s');
-        this.chaosMode = null;
-      } else {
-        this.toast('click an edge to inject latency');
-      }
+    if (this.chaosMode) {
+      this.handleChaosClick(cursor.wx, cursor.wy);
       return;
     }
 
@@ -754,17 +728,229 @@ class App {
     }
   }
 
-  private activateChaos(mode: ChaosMode): void {
-    if (mode === 'cascade') {
+  private stopAndReport(): void {
+    if (this.state.running) {
+      this.state.running = false;
+      pushEvent(this.state, 'info', 'simulation stopped');
+      this.updateSimBadge();
+    }
+    this.openStatusReport();
+  }
+
+  private openStatusReport(): void {
+    const overlay = byId<HTMLElement>('status-modal');
+    const body = byId<HTMLElement>('status-modal-body');
+    body.innerHTML = '';
+    body.appendChild(this.buildStatusReport());
+    overlay.classList.remove('hidden');
+  }
+
+  private closeStatusReport(): void {
+    byId<HTMLElement>('status-modal').classList.add('hidden');
+  }
+
+  private buildStatusReport(): HTMLElement {
+    const root = document.createElement('div');
+    const m = this.state.metrics;
+    const topo = this.state.topology;
+
+    // Snapshot
+    root.appendChild(reportSection('Snapshot', statGrid([
+      ['Availability', `${m.availabilityPct.toFixed(2)}%`, severityClass('availabilityPct', m.availabilityPct)],
+      ['p99 latency', m.p99LatencyMs > 0 ? `${m.p99LatencyMs} ms` : '—', severityClass('p99LatencyMs', m.p99LatencyMs)],
+      ['Throughput', formatRps(m.throughputRps), null],
+      ['Error rate', `${m.errorRatePct.toFixed(2)}%`, severityClass('errorRatePct', m.errorRatePct)],
+      ['Error budget', `${m.errorBudgetPct.toFixed(1)}%`, m.errorBudgetPct < 50 ? 'warn' : null],
+      ['Active incidents', `${m.activeIncidents}`, m.activeIncidents > 0 ? 'bad' : 'good'],
+    ])));
+
+    // 60s window peaks
+    if (this.state.history.length >= 2) {
+      const peakP99 = Math.max(...this.state.history.map(h => h.m.p99LatencyMs));
+      const minAvail = Math.min(...this.state.history.map(h => h.m.availabilityPct));
+      const peakErr = Math.max(...this.state.history.map(h => h.m.errorRatePct));
+      const peakRps = Math.max(...this.state.history.map(h => h.m.throughputRps));
+      root.appendChild(reportSection('60-second window', statGrid([
+        ['Min availability', `${minAvail.toFixed(2)}%`, severityClass('availabilityPct', minAvail)],
+        ['Peak p99', `${peakP99} ms`, severityClass('p99LatencyMs', peakP99)],
+        ['Peak error rate', `${peakErr.toFixed(2)}%`, severityClass('errorRatePct', peakErr)],
+        ['Peak throughput', formatRps(peakRps), null],
+      ])));
+    }
+
+    // Points of failure
+    const downNodes = topo.nodes.filter(n => n.status === 'down');
+    const degraded = topo.nodes.filter(n => n.status === 'degraded');
+    const affected = topo.nodes.filter(n => n.status !== 'down' && n.status !== 'degraded' && hasActiveNodeEffects(n));
+    const brokenEdges = topo.edges.filter(e => isEdgeBroken(e, this.state.tick));
+
+    const pofWrap = document.createElement('div');
+    pofWrap.className = 'report-list';
+    if (downNodes.length === 0 && degraded.length === 0 && affected.length === 0 && brokenEdges.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'report-empty';
+      empty.textContent = 'No active points of failure.';
+      pofWrap.appendChild(empty);
+    } else {
+      for (const n of downNodes) {
+        const tag = n.effects.permanent ? 'down (permanent)' : 'down';
+        pofWrap.appendChild(reportLine('down', `${n.label} (${n.type}) — ${tag}`));
+      }
+      for (const n of degraded) {
+        const detail = `${n.errorRate.toFixed(1)}% errors, ${n.loadPct.toFixed(0)}% load`;
+        pofWrap.appendChild(reportLine('degraded', `${n.label} (${n.type}) — degraded · ${detail}`));
+      }
+      for (const n of affected) {
+        const desc = describeNodeEffects(n);
+        if (desc) pofWrap.appendChild(reportLine('effects', `${n.label} (${n.type}) — ${desc}`));
+      }
+      for (const e of brokenEdges) {
+        const from = topo.nodes.find(n => n.id === e.fromId);
+        const to = topo.nodes.find(n => n.id === e.toId);
+        const desc = describeEdgeEffects(e, this.state.tick);
+        pofWrap.appendChild(reportLine('edge', `${from?.label ?? '?'} → ${to?.label ?? '?'} — ${desc}`));
+      }
+    }
+    root.appendChild(reportSection('Points of failure', pofWrap));
+
+    // Recent errors and warnings
+    const recent = this.state.events
+      .filter(ev => ev.level === 'error' || ev.level === 'warn')
+      .slice(0, 12);
+    const eventsWrap = document.createElement('div');
+    eventsWrap.className = 'report-list';
+    if (recent.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'report-empty';
+      empty.textContent = 'No errors or warnings logged.';
+      eventsWrap.appendChild(empty);
+    } else {
+      for (const ev of recent) {
+        eventsWrap.appendChild(reportLine(ev.level, `t=${ev.tick} · ${ev.msg}`));
+      }
+    }
+    root.appendChild(reportSection('Recent errors & warnings', eventsWrap));
+
+    // Topology summary
+    const byCat: Record<string, number> = {};
+    for (const n of topo.nodes) {
+      const cat = CATEGORY[n.type];
+      byCat[cat] = (byCat[cat] ?? 0) + 1;
+    }
+    const totalErrEvents = this.state.events.filter(e => e.level === 'error').length;
+    const totalWarnEvents = this.state.events.filter(e => e.level === 'warn').length;
+    root.appendChild(reportSection('Run summary', statGrid([
+      ['Nodes', `${topo.nodes.length}`, null],
+      ['Edges', `${topo.edges.length}`, null],
+      ['Ticks elapsed', `${this.state.tick}`, null],
+      ['Sim duration', formatDuration(this.state.tick / Math.max(1, this.state.ticksPerSec)), null],
+      ['Error events', `${totalErrEvents}`, totalErrEvents > 0 ? 'bad' : 'good'],
+      ['Warn events', `${totalWarnEvents}`, totalWarnEvents > 0 ? 'warn' : null],
+    ])));
+
+    return root;
+  }
+
+  private populateChaosList(): void {
+    const listEl = document.getElementById('chaos-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    const entries = CHAOS_CATALOG.filter(e => e.category === this.chaosCategory);
+    for (const entry of entries) {
+      const btn = document.createElement('button');
+      btn.className = 'chaos-btn';
+      btn.title = entry.description;
+      const glyph = document.createElement('span');
+      glyph.className = 'chaos-glyph';
+      glyph.textContent = entry.glyph;
+      const lbl = document.createElement('span');
+      lbl.className = 'chaos-label';
+      lbl.textContent = entry.label;
+      btn.appendChild(glyph);
+      btn.appendChild(lbl);
+      btn.addEventListener('click', () => this.activateChaos(entry));
+      listEl.appendChild(btn);
+    }
+  }
+
+  private activateChaos(entry: ChaosCatalogEntry): void {
+    if (entry.target === 'global') {
       this.snapshot();
-      cascadeFailure(this.state);
+      const ok = triggerChaos(this.state, entry.kind, { kind: 'global' });
+      if (ok) this.toast(entry.label);
       return;
     }
-    this.chaosMode = mode;
+    this.chaosMode = entry;
     this.partitionFirstNodeId = null;
-    if (mode === 'kill') this.toast('click a node to kill');
-    if (mode === 'partition') this.toast('click two nodes that share an edge');
-    if (mode === 'latency') this.toast('click an edge for +500ms (10s)');
+    const acceptHint = entry.acceptNodeTypes
+      ? ` (${entry.acceptNodeTypes.join('/')})`
+      : '';
+    if (entry.target === 'node') {
+      this.toast(`click a node${acceptHint} — ${entry.label}`);
+    } else if (entry.target === 'edge') {
+      this.toast(`click an edge — ${entry.label}`);
+    } else if (entry.target === 'two-nodes') {
+      this.toast(`click two nodes — ${entry.label}`);
+    }
+  }
+
+  private handleChaosClick(wx: number, wy: number): void {
+    const entry = this.chaosMode;
+    if (!entry) return;
+    if (entry.target === 'node') {
+      const node = this.renderer.pickNode(this.state, wx, wy);
+      if (!node) {
+        this.cancelChaos();
+        return;
+      }
+      if (entry.acceptNodeTypes && !entry.acceptNodeTypes.includes(node.type)) {
+        this.toast(`${node.type} is not a valid target for ${entry.label}`);
+        return;
+      }
+      this.snapshot();
+      const ok = triggerChaos(this.state, entry.kind, { kind: 'node', nodeId: node.id });
+      if (ok) this.toast(`${entry.label}: ${node.label}`);
+      this.chaosMode = null;
+      this.refreshInspector();
+      return;
+    }
+    if (entry.target === 'edge') {
+      const edge = this.renderer.pickEdge(this.state, wx, wy);
+      if (!edge) {
+        this.toast('click an edge');
+        return;
+      }
+      this.snapshot();
+      const ok = triggerChaos(this.state, entry.kind, { kind: 'edge', edgeId: edge.id });
+      if (ok) this.toast(`${entry.label}: edge ${edge.id.slice(-4)}`);
+      this.chaosMode = null;
+      return;
+    }
+    if (entry.target === 'two-nodes') {
+      const node = this.renderer.pickNode(this.state, wx, wy);
+      if (!node) {
+        this.cancelChaos();
+        return;
+      }
+      if (!this.partitionFirstNodeId) {
+        this.partitionFirstNodeId = node.id;
+        this.toast(`${entry.label}: pick second node (paired with ${node.label})`);
+        return;
+      }
+      if (this.partitionFirstNodeId === node.id) {
+        this.toast('pick a different node');
+        return;
+      }
+      this.snapshot();
+      const ok = triggerChaos(this.state, entry.kind, {
+        kind: 'two-nodes',
+        fromId: this.partitionFirstNodeId,
+        toId: node.id,
+      });
+      if (ok) this.toast(`${entry.label} injected`);
+      this.partitionFirstNodeId = null;
+      this.chaosMode = null;
+    }
   }
 
   private cancelChaos(): void {
@@ -931,7 +1117,12 @@ class App {
         node.config.emitRps = v;
       }));
     }
-    if (node.type === 'Cache' || node.type === 'CDN') {
+    if (
+      node.type === 'Cache' ||
+      node.type === 'CDN' ||
+      node.type === 'KeyValueStore' ||
+      node.type === 'ConfigStore'
+    ) {
       cfg.appendChild(rangeField('Hit rate', node.config.hitRate ?? 0.7, 0, 1, 0.01, v => {
         node.config.hitRate = v;
       }, v => `${Math.round(v * 100)}%`));
@@ -941,21 +1132,43 @@ class App {
     }
     if (
       node.type === 'APIServer' ||
+      node.type === 'AppServer' ||
       node.type === 'LoadBalancer' ||
       node.type === 'DBPrimary' ||
-      node.type === 'DBReplica'
+      node.type === 'DBReplica' ||
+      node.type === 'ObjectStore' ||
+      node.type === 'SearchIndex' ||
+      node.type === 'DNS' ||
+      node.type === 'ServiceMesh' ||
+      node.type === 'WAF'
     ) {
-      cfg.appendChild(numField('Capacity rps', node.config.capacityRps ?? 1000, 1, 100000, v => {
+      cfg.appendChild(numField('Capacity rps', node.config.capacityRps ?? 1000, 1, 200000, v => {
         node.config.capacityRps = v;
       }));
     }
-    if (node.type === 'Queue') {
-      cfg.appendChild(numField('Drain rate', node.config.drainRate ?? 500, 1, 100000, v => {
+    if (node.type === 'Queue' || node.type === 'MessageBroker') {
+      cfg.appendChild(numField('Drain rate', node.config.drainRate ?? 500, 1, 200000, v => {
         node.config.drainRate = v;
       }));
       cfg.appendChild(numField('Capacity', node.config.capacity ?? 10000, 1, 1000000, v => {
         node.config.capacity = v;
       }));
+    }
+    if (node.type === 'RateLimiter') {
+      cfg.appendChild(numField('Capacity rps', node.config.capacityRps ?? 5000, 1, 200000, v => {
+        node.config.capacityRps = v;
+      }));
+      cfg.appendChild(numField('Limit rps', node.config.limitRps ?? 1000, 1, 200000, v => {
+        node.config.limitRps = v;
+      }));
+    }
+    if (node.type === 'AuthService') {
+      cfg.appendChild(numField('Capacity rps', node.config.capacityRps ?? 2000, 1, 200000, v => {
+        node.config.capacityRps = v;
+      }));
+      cfg.appendChild(rangeField('Token cache hit', node.config.tokenCacheHitRate ?? 0.85, 0, 1, 0.01, v => {
+        node.config.tokenCacheHitRate = v;
+      }, v => `${Math.round(v * 100)}%`));
     }
     el.appendChild(cfg);
 
@@ -982,6 +1195,14 @@ class App {
       });
       row.appendChild(btn);
     }
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn';
+    clearBtn.textContent = 'Clear effects';
+    clearBtn.addEventListener('click', () => {
+      clearNodeEffects(this.state, node.id);
+      this.refreshInspector();
+    });
+    row.appendChild(clearBtn);
     const del = document.createElement('button');
     del.className = 'btn';
     del.textContent = 'Delete';
@@ -1055,6 +1276,14 @@ class App {
       this.refreshInspector();
     });
     row.appendChild(latBtn);
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn';
+    clearBtn.textContent = 'Clear effects';
+    clearBtn.addEventListener('click', () => {
+      clearEdgeEffects(this.state, edge.id);
+      this.refreshInspector();
+    });
+    row.appendChild(clearBtn);
     const del = document.createElement('button');
     del.className = 'btn';
     del.textContent = 'Delete';
@@ -1287,6 +1516,142 @@ function formatTime(ms: number): string {
   const mm = String(d.getMinutes()).padStart(2, '0');
   const ss = String(d.getSeconds()).padStart(2, '0');
   return `${hh}:${mm}:${ss}`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds - m * 60);
+  return `${m}m ${s}s`;
+}
+
+function severityClass(key: MetricKey, value: number): 'good' | 'warn' | 'bad' | null {
+  return metricSeverity(key, value);
+}
+
+function reportSection(title: string, body: HTMLElement): HTMLElement {
+  const section = document.createElement('div');
+  section.className = 'report-section';
+  const t = document.createElement('div');
+  t.className = 'report-section-title';
+  t.textContent = title;
+  section.appendChild(t);
+  section.appendChild(body);
+  return section;
+}
+
+function statGrid(rows: Array<[string, string, string | null]>): HTMLElement {
+  const grid = document.createElement('div');
+  grid.className = 'report-stat-grid';
+  for (const [label, value, severity] of rows) {
+    const cell = document.createElement('div');
+    cell.className = 'report-stat';
+    const l = document.createElement('div');
+    l.className = 'report-stat-label';
+    l.textContent = label;
+    const v = document.createElement('div');
+    v.className = 'report-stat-value';
+    if (severity) v.classList.add(severity);
+    v.textContent = value;
+    cell.appendChild(l);
+    cell.appendChild(v);
+    grid.appendChild(cell);
+  }
+  return grid;
+}
+
+function reportLine(tag: string, msg: string): HTMLElement {
+  const line = document.createElement('div');
+  line.className = 'report-line';
+  const t = document.createElement('span');
+  t.className = `report-line-tag ${tag}`;
+  t.textContent = tag;
+  const m = document.createElement('span');
+  m.className = 'report-line-msg';
+  m.textContent = msg;
+  line.appendChild(t);
+  line.appendChild(m);
+  return line;
+}
+
+function hasActiveNodeEffects(n: SimNode): boolean {
+  const e = n.effects;
+  return (
+    e.capacityMul !== 1 ||
+    e.errorPctFloor !== 0 ||
+    e.latencyAddMs !== 0 ||
+    e.pausedUntilTick > 0 ||
+    e.permanent ||
+    e.hot ||
+    e.authFailing ||
+    e.splitBrain ||
+    e.unhealthy ||
+    e.hitRateOverride !== null ||
+    e.oomChance !== 0 ||
+    e.capacityDecayPerTick !== 0 ||
+    e.slowStartUntilTick > 0 ||
+    e.compactionUntilTick > 0 ||
+    e.deadlockChance !== 0 ||
+    e.poolCap !== null ||
+    e.logFloodPct !== 0 ||
+    e.replicationLagBoost !== 0
+  );
+}
+
+function describeNodeEffects(n: SimNode): string {
+  const e = n.effects;
+  const parts: string[] = [];
+  if (e.capacityMul < 1) parts.push(`capacity ${(e.capacityMul * 100).toFixed(0)}%`);
+  if (e.errorPctFloor > 0) parts.push(`${e.errorPctFloor.toFixed(0)}% error floor`);
+  if (e.latencyAddMs > 0) parts.push(`+${e.latencyAddMs}ms`);
+  if (e.permanent) parts.push('permanent');
+  if (e.hot) parts.push('hot shard');
+  if (e.authFailing) parts.push('auth failing');
+  if (e.splitBrain) parts.push('split-brain');
+  if (e.unhealthy) parts.push('unhealthy');
+  if (e.hitRateOverride !== null) parts.push(`hit rate ${(e.hitRateOverride * 100).toFixed(0)}%`);
+  if (e.oomChance > 0) parts.push('memory leak');
+  if (e.capacityDecayPerTick > 0) parts.push('capacity decaying');
+  if (e.deadlockChance > 0) parts.push('deadlock risk');
+  if (e.poolCap !== null) parts.push(`pool cap ${e.poolCap}rps`);
+  if (e.logFloodPct > 0) parts.push('log overload');
+  if (e.replicationLagBoost > 0) parts.push(`lag boost ${e.replicationLagBoost}x`);
+  return parts.join(', ');
+}
+
+function isEdgeBroken(edge: SimEdge, tick: number): boolean {
+  const e = edge.effects;
+  return (
+    edge.partitioned ||
+    e.packetLossPct > 0 ||
+    e.bandwidthCap !== null ||
+    e.flapping ||
+    e.blackhole ||
+    e.tlsFailing ||
+    e.bloatMs > 0 ||
+    e.weight !== 1 ||
+    tick < e.dnsFailingUntilTick ||
+    tick < e.blackholeUntilTick ||
+    e.idleTimeoutBelowRps > 0 ||
+    tick < edge.latencyBoostUntilTick
+  );
+}
+
+function describeEdgeEffects(edge: SimEdge, tick: number): string {
+  const e = edge.effects;
+  const parts: string[] = [];
+  if (edge.partitioned) parts.push('partitioned');
+  if (e.tlsFailing) parts.push('TLS failing');
+  if (e.blackhole || tick < e.blackholeUntilTick) parts.push('blackholed');
+  if (e.flapping) parts.push('flapping');
+  if (e.packetLossPct > 0) parts.push(`${(e.packetLossPct * 100).toFixed(0)}% loss`);
+  if (e.bandwidthCap !== null) parts.push(`${e.bandwidthCap}rps cap`);
+  if (e.bloatMs > 0) parts.push(`+${e.bloatMs}ms bloat`);
+  if (e.weight !== 1) parts.push(`weight ${e.weight}x`);
+  if (tick < e.dnsFailingUntilTick) parts.push('DNS failing');
+  if (e.idleTimeoutBelowRps > 0) parts.push('idle-timeout');
+  if (tick < edge.latencyBoostUntilTick) parts.push(`+${edge.latencyBoostMs}ms boost`);
+  return parts.join(', ') || 'misconfigured';
 }
 
 if (DEBUG) console.log('DistroSim booting');

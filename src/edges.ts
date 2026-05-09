@@ -1,6 +1,6 @@
 import { inputPort, outputPort } from './nodes';
 import { nextId } from './nodes';
-import type { SimEdge, SimNode } from './types';
+import { emptyEdgeEffects, type SimEdge, type SimNode } from './types';
 
 export function makeEdge(from: SimNode, to: SimNode): SimEdge {
   return {
@@ -13,14 +13,32 @@ export function makeEdge(from: SimNode, to: SimNode): SimEdge {
     latencyBoostUntilTick: -1,
     latencyBoostMs: 0,
     measuredRps: 0,
+    effects: emptyEdgeEffects(),
   };
 }
 
 export function edgeEffectiveLatency(edge: SimEdge, currentTick: number): number {
+  let latency = edge.baseLatencyMs;
   if (currentTick < edge.latencyBoostUntilTick) {
-    return edge.baseLatencyMs + edge.latencyBoostMs;
+    latency += edge.latencyBoostMs;
   }
-  return edge.baseLatencyMs;
+  latency += edge.effects.bloatMs;
+  if (currentTick < edge.effects.dnsFailingUntilTick) {
+    latency += 250;
+  }
+  return latency;
+}
+
+export function edgeIsBlackholed(edge: SimEdge, currentTick: number): boolean {
+  if (edge.effects.blackhole) return true;
+  if (currentTick < edge.effects.blackholeUntilTick) return true;
+  return false;
+}
+
+export function edgeIsFlapping(edge: SimEdge, currentTick: number): boolean {
+  if (!edge.effects.flapping) return false;
+  const period = Math.max(1, edge.effects.flapPeriodTicks);
+  return Math.floor(currentTick / period) % 2 === 0;
 }
 
 export interface EdgeGeometry {

@@ -1,9 +1,9 @@
+import type { ChaosCatalogEntry } from './chaos';
 import { bezierPoint, distToEdge, edgeGeometry } from './edges';
 import { hitInputPort, hitOutputPort, inputPort, nodeBounds, nodeColor, nodeGlyph, outputPort, pointInNode } from './nodes';
 import type { Packet, SimState } from './simulation';
 import {
   CATEGORY,
-  type ChaosMode,
   NODE_HEIGHT,
   NODE_WIDTH,
   type Selection,
@@ -25,7 +25,7 @@ export interface RenderInput {
   pendingEdge: PendingEdge | null;
   panActive: boolean;
   spacePressed: boolean;
-  chaosMode: ChaosMode;
+  chaosMode: ChaosCatalogEntry | null;
   partitionFirstNodeId: string | null;
 }
 

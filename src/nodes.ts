@@ -5,6 +5,7 @@ import {
   NODE_GLYPH,
   NODE_HEIGHT,
   NODE_WIDTH,
+  emptyNodeEffects,
   type NodeType,
   type SimNode,
 } from './types';
@@ -30,6 +31,7 @@ export function makeNode(type: NodeType, x: number, y: number, label?: string): 
     throughputRps: 0,
     config: { ...DEFAULT_CONFIG[type] },
     ema: { load: 0, latency: 0, errors: 0 },
+    effects: emptyNodeEffects(),
   };
 }
 
@@ -38,11 +40,22 @@ function defaultLabel(type: NodeType): string {
     Client: 'client',
     LoadBalancer: 'lb',
     APIServer: 'api',
+    AppServer: 'app',
     DBPrimary: 'db-primary',
     DBReplica: 'db-replica',
     Cache: 'cache',
     Queue: 'queue',
     CDN: 'cdn',
+    KeyValueStore: 'kv',
+    ObjectStore: 'object-store',
+    MessageBroker: 'broker',
+    SearchIndex: 'search',
+    DNS: 'dns',
+    ServiceMesh: 'mesh',
+    RateLimiter: 'rate-limiter',
+    AuthService: 'auth',
+    WAF: 'waf',
+    ConfigStore: 'config',
   };
   return map[type];
 }
@@ -110,9 +123,20 @@ export const ALL_NODE_TYPES: NodeType[] = [
   'Client',
   'LoadBalancer',
   'APIServer',
+  'AppServer',
   'DBPrimary',
   'DBReplica',
   'Cache',
   'Queue',
   'CDN',
+  'KeyValueStore',
+  'ObjectStore',
+  'MessageBroker',
+  'SearchIndex',
+  'DNS',
+  'ServiceMesh',
+  'RateLimiter',
+  'AuthService',
+  'WAF',
+  'ConfigStore',
 ];

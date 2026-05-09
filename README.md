@@ -35,9 +35,9 @@ For the full keyboard / mouse reference, see **[docs/controls.md](docs/controls.
 
 DistroSim lets you:
 
-1. **Build** a topology of clients, load balancers, API servers, databases, replicas, caches, queues, and CDNs on a 2D canvas.
+1. **Build** a topology with **18 node types**: clients, load balancers, API servers, databases, replicas, caches, queues, CDNs, key-value stores, object stores, message brokers, search indexes, DNS, service mesh, rate limiters, auth services, WAFs, and config stores.
 2. **Run** a 4 Hz tick simulation that sources traffic from clients, propagates it downstream, models per-node capacity and latency, and reports global metrics (availability, p99 latency, throughput, error rate).
-3. **Break things** with one-click chaos primitives: kill a node, partition an edge, inject a latency spike, or trigger a cascade failure.
+3. **Break things** with **63 bespoke chaos events** organized into Infrastructure, Network, Application-level, and Data-layer categories — from instance crashes and AZ failures to cache poisoning, split-brain, GC pauses, LSM compaction storms, and TLS certificate expiry.
 4. **Watch** the impact in real time via animated packets, per-node load halos, an event log, and 60-second sparklines.
 5. **Save and replay** interesting topologies as JSON.
 

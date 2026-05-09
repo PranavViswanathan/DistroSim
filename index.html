@@ -542,25 +542,60 @@
       }
 
       /* CHAOS PANEL */
-      .chaos-grid {
+      .chaos-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 6px;
+      }
+      .chaos-tab {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text-mute);
+        padding: 6px 4px;
+        font-family: inherit;
+        font-size: 9px;
+        cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+      }
+      .chaos-tab:hover {
+        color: var(--text);
+      }
+      .chaos-tab.active {
+        color: var(--red);
+        border-bottom-color: var(--red);
+      }
+      .chaos-list {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 6px;
+        gap: 4px;
+        max-height: 240px;
+        overflow-y: auto;
+        padding-right: 4px;
       }
+      .chaos-list::-webkit-scrollbar { width: 4px; }
+      .chaos-list::-webkit-scrollbar-thumb { background: var(--bg-elev-3); }
       .chaos-btn {
         background: var(--bg-elev-2);
         border: 1px solid var(--border);
         color: var(--text);
-        padding: 10px 8px;
+        padding: 8px 6px;
         font-family: inherit;
-        font-size: 10px;
+        font-size: 9px;
         cursor: pointer;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
         border-radius: 4px;
         text-align: left;
-        line-height: 1.4;
+        line-height: 1.3;
         transition: all 0.15s;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
       }
       .chaos-btn:hover {
         border-color: var(--red);
@@ -569,10 +604,14 @@
       .chaos-btn .chaos-glyph {
         display: block;
         font-family: 'Syne', sans-serif;
-        font-size: 13px;
-        margin-bottom: 4px;
+        font-size: 12px;
         color: var(--red);
         font-weight: 700;
+      }
+      .chaos-btn .chaos-label {
+        display: block;
+        font-size: 9px;
+        color: var(--text);
       }
 
       /* EVENT LOG */
@@ -609,6 +648,138 @@
       .event.error .event-msg { color: var(--red); }
       .event.warn .event-msg { color: var(--yellow); }
       .event.info .event-msg { color: var(--accent); }
+
+      /* STATUS MODAL */
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(2px);
+      }
+      .modal-overlay.hidden { display: none; }
+      .modal-window {
+        background: var(--bg-elev-1);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        width: min(720px, 92vw);
+        max-height: 86vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+      }
+      .modal-header {
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+      }
+      .modal-header h2 {
+        margin: 0;
+        font-family: 'Syne', sans-serif;
+        font-size: 14px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text);
+      }
+      .modal-close {
+        background: transparent;
+        border: none;
+        color: var(--text-mute);
+        font-size: 22px;
+        cursor: pointer;
+        padding: 0 6px;
+        line-height: 1;
+      }
+      .modal-close:hover { color: var(--text); }
+      .modal-body {
+        padding: 14px 18px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .modal-footer {
+        padding: 10px 18px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .report-section {
+        margin-bottom: 18px;
+      }
+      .report-section:last-child { margin-bottom: 0; }
+      .report-section-title {
+        font-family: 'Syne', sans-serif;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+        margin-bottom: 8px;
+        padding-bottom: 4px;
+        border-bottom: 1px dashed var(--border);
+      }
+      .report-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .report-stat {
+        background: var(--bg-elev-2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 8px 10px;
+      }
+      .report-stat-label {
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+      }
+      .report-stat-value {
+        font-size: 16px;
+        font-variant-numeric: tabular-nums;
+        margin-top: 2px;
+        color: var(--text);
+      }
+      .report-stat-value.good { color: var(--green); }
+      .report-stat-value.warn { color: var(--yellow); }
+      .report-stat-value.bad { color: var(--red); }
+      .report-list {
+        font-size: 11px;
+        line-height: 1.55;
+      }
+      .report-line {
+        padding: 4px 0;
+        border-bottom: 1px dashed rgba(255,255,255,0.04);
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .report-line:last-child { border-bottom: none; }
+      .report-line-tag {
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 1px 5px;
+        border-radius: 2px;
+        flex-shrink: 0;
+      }
+      .report-line-tag.down { background: rgba(239,68,68,0.15); color: var(--red); }
+      .report-line-tag.degraded { background: rgba(250,204,21,0.15); color: var(--yellow); }
+      .report-line-tag.effects { background: rgba(77,208,200,0.12); color: var(--accent); }
+      .report-line-tag.edge { background: rgba(239,68,68,0.12); color: var(--red); }
+      .report-line-tag.warn { background: rgba(250,204,21,0.12); color: var(--yellow); }
+      .report-line-tag.error { background: rgba(239,68,68,0.15); color: var(--red); }
+      .report-line-msg { color: var(--text-dim); }
+      .report-empty {
+        color: var(--text-mute);
+        font-style: italic;
+        padding: 6px 0;
+      }
 
       /* BOTTOM SPARKLINE PANEL */
       .sparkpanel {
@@ -809,8 +980,23 @@
           <button class="btn" id="import-btn">Import</button>
           <input type="file" id="import-input" accept=".json,application/json" style="display: none" />
           <button class="btn primary" id="sim-toggle">Start sim</button>
+          <button class="btn danger" id="sim-stop">Stop</button>
         </div>
       </header>
+
+      <div class="modal-overlay hidden" id="status-modal">
+        <div class="modal-window">
+          <div class="modal-header">
+            <h2>Simulation report</h2>
+            <button class="modal-close" id="status-modal-close" title="Close">×</button>
+          </div>
+          <div class="modal-body" id="status-modal-body"></div>
+          <div class="modal-footer">
+            <button class="btn" id="status-modal-resume">Resume sim</button>
+            <button class="btn primary" id="status-modal-ok">Close</button>
+          </div>
+        </div>
+      </div>
 
       <!-- MAIN CANVAS -->
       <main class="main">
@@ -870,24 +1056,13 @@
 
         <div class="sidebar-section">
           <h3 class="sidebar-title">Chaos</h3>
-          <div class="chaos-grid">
-            <button class="chaos-btn" data-chaos="kill">
-              <span class="chaos-glyph">×</span>
-              Kill node
-            </button>
-            <button class="chaos-btn" data-chaos="partition">
-              <span class="chaos-glyph">‖</span>
-              Network partition
-            </button>
-            <button class="chaos-btn" data-chaos="latency">
-              <span class="chaos-glyph">~</span>
-              Latency spike
-            </button>
-            <button class="chaos-btn" data-chaos="cascade">
-              <span class="chaos-glyph">⌁</span>
-              Cascade failure
-            </button>
+          <div class="chaos-tabs">
+            <button class="chaos-tab active" data-chaos-tab="infra">Infra</button>
+            <button class="chaos-tab" data-chaos-tab="network">Network</button>
+            <button class="chaos-tab" data-chaos-tab="app">App</button>
+            <button class="chaos-tab" data-chaos-tab="data">Data</button>
           </div>
+          <div class="chaos-list" id="chaos-list"></div>
         </div>
 
         <div class="sidebar-section" id="inspector-section">
