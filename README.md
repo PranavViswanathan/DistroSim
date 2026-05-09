@@ -1,51 +1,149 @@
 # DistroSim
 
-Distributed systems simulator with chaos engineering. Vanilla TypeScript + Vite, no UI frameworks.
+> A browser-based distributed-systems simulator with chaos engineering. Build topologies on a canvas, watch traffic flow tick by tick, then break things and see how the metrics react.
 
-## Develop
+Vanilla TypeScript + Vite + a single `<canvas>`. No UI framework, no backend simulation — the entire model runs in the browser. Production is a static bundle behind a tiny Express server.
+
+---
+
+## Table of contents
+
+- [Quick start](#quick-start)
+- [What it does](#what-it-does)
+- [Documentation](#documentation)
+- [Repository layout](#repository-layout)
+- [Scripts](#scripts)
+- [Deployment](#deployment)
+- [Contributing](#contributing)
+
+---
+
+## Quick start
 
 ```bash
 npm install
-npm run dev
+npm run dev          # http://localhost:5173
 ```
 
-Vite serves the app at http://localhost:5173.
+Press `S` to start the simulation, click an empty space and press `N` to drop a node, drag from a node's right-edge port to another node's left-edge port to connect them. Or pick a [preset](docs/presets.md) from the toolbar to skip the setup.
 
-## Build
+For the full keyboard / mouse reference, see **[docs/controls.md](docs/controls.md)**.
 
-```bash
-npm run build      # produces dist/ + server.js
-npm start          # runs the production server on $PORT (default 3000)
+---
+
+## What it does
+
+DistroSim lets you:
+
+1. **Build** a topology of clients, load balancers, API servers, databases, replicas, caches, queues, and CDNs on a 2D canvas.
+2. **Run** a 4 Hz tick simulation that sources traffic from clients, propagates it downstream, models per-node capacity and latency, and reports global metrics (availability, p99 latency, throughput, error rate).
+3. **Break things** with one-click chaos primitives: kill a node, partition an edge, inject a latency spike, or trigger a cascade failure.
+4. **Watch** the impact in real time via animated packets, per-node load halos, an event log, and 60-second sparklines.
+5. **Save and replay** interesting topologies as JSON.
+
+The simulation is opinionated and approximate — it uses an M/M/1-style queueing approximation for service latency and a simple BFS-from-clients ordering for traffic propagation. It's a tool for *intuition*, not capacity planning. See **[docs/simulation.md](docs/simulation.md)** for the full model.
+
+---
+
+## Documentation
+
+Detailed documentation lives in [`docs/`](docs/). Start here:
+
+| Document                                      | What's in it                                                        |
+|-----------------------------------------------|---------------------------------------------------------------------|
+| [docs/architecture.md](docs/architecture.md)  | Stack, repo layout, module dependency graph, data flow per frame    |
+| [docs/simulation.md](docs/simulation.md)      | What `runTick()` does — traffic sourcing, ordering, latency, p99    |
+| [docs/node-types.md](docs/node-types.md)      | All 8 node types: defaults, behavior, capacity, status transitions  |
+| [docs/chaos.md](docs/chaos.md)                | Kill, partition, latency, cascade — and how to add new primitives   |
+| [docs/presets.md](docs/presets.md)            | Built-in topologies, what they're useful for, how to add your own   |
+| [docs/controls.md](docs/controls.md)          | Full keyboard, mouse, toolbar, and sidebar reference                |
+| [docs/metrics.md](docs/metrics.md)            | Global metrics, sparklines, severity thresholds, per-node fields    |
+| [docs/deployment.md](docs/deployment.md)      | Docker, Railway, Render, Fly.io, Cloud Run, health checks, env vars |
+| [docs/development.md](docs/development.md)    | Local dev workflow, typecheck, conventions, where to add features   |
+
+---
+
+## Repository layout
+
+```
+DistroSim/
+├── README.md                 # ← you are here
+├── docs/                     # Detailed documentation (linked above)
+├── index.html                # Single-page entry; loads /src/main.ts
+├── src/
+│   ├── main.ts               # Top-level controller: input + render loop
+│   ├── canvas.ts             # Canvas rendering
+│   ├── simulation.ts         # Per-tick traffic + latency + error model
+│   ├── chaos.ts              # Kill, partition, latency, cascade
+│   ├── nodes.ts              # Node creation, hit-testing, ports
+│   ├── edges.ts              # Edge geometry (bezier) + hit-testing
+│   ├── presets.ts            # Built-in topologies
+│   ├── metrics.ts            # Sparkline rendering + formatters
+│   └── types.ts              # Shared types and constants
+├── server.cts                # Express static server (TS source)
+├── server.cjs                # Compiled server (build output)
+├── Dockerfile                # Multi-stage Node 20 Alpine
+├── Makefile                  # `make help` for dev/build/serve/docker
+├── railway.toml              # Railway deploy config
+├── vite.config.ts
+├── tsconfig.json             # client TS config
+└── tsconfig.server.json      # server TS config
 ```
 
-## Deploy
+A walk-through of every module and how they depend on each other lives in **[docs/architecture.md](docs/architecture.md)**.
 
-### Railway
+---
 
-`railway.toml` is pre-configured for Dockerfile builds. Push to a Railway service and it will pick up the Dockerfile automatically.
-
-### Render / Fly.io / any Docker host
+## Scripts
 
 ```bash
+npm run dev          # Vite dev server with HMR (port 5173)
+npm run build        # vite build + tsc -p tsconfig.server.json
+npm start            # node server.cjs (port 3000 or $PORT)
+npm run preview      # Vite preview of the production build
+```
+
+There's also a Makefile with background-server, Docker, and cleanup targets:
+
+```bash
+make help            # list every target
+make dev-bg          # vite in the background
+make serve-bg        # production server in the background
+make docker-build    # build the Docker image
+make typecheck       # tsc --noEmit
+make clean           # remove dist/ server.cjs .pids/
+```
+
+Full reference in **[docs/development.md](docs/development.md)**.
+
+---
+
+## Deployment
+
+DistroSim is stateless. Anything that runs `node server.cjs` and forwards `$PORT` works.
+
+```bash
+# Local
+npm run build && PORT=3000 npm start
+
+# Docker
 docker build -t distrosim .
 docker run -p 3000:3000 distrosim
 ```
 
-## Controls
+`railway.toml` is pre-configured for Dockerfile builds and `/healthz` health probes. Render, Fly.io, and Cloud Run all work out of the box.
 
-- `N` — open node picker at cursor
-- `S` — toggle simulation
-- `Space + drag` — pan canvas
-- `Scroll` — zoom
-- `Backspace` / `Delete` — delete selection
-- `Cmd/Ctrl + Z` — undo
-- `Double-click` a node — edit label
-- Click an output port and drag to an input port to create an edge.
+Full setup notes for each platform: **[docs/deployment.md](docs/deployment.md)**.
 
-## Topology presets
+---
 
-The "Load preset" dropdown ships four topologies: simple 3-tier, read-replica setup, microservices, and full HA.
+## Contributing
 
-## Chaos panel
+The codebase is small and approachable: ~10 TypeScript modules, no framework, one mutable state object. Common entry points:
 
-Right sidebar — kill node, network partition, latency spike, cascade failure. The event log streams events with timestamps.
+- Adding a node type → [docs/node-types.md](docs/node-types.md) + [docs/simulation.md](docs/simulation.md#extending-the-model)
+- Adding a chaos primitive → [docs/chaos.md](docs/chaos.md#adding-a-new-chaos-primitive)
+- Adding a preset → [docs/presets.md](docs/presets.md#adding-a-preset)
+- Tuning the feel → [docs/development.md](docs/development.md#tune-simulation-feel)
+
+Strict TypeScript everywhere; see **[docs/development.md](docs/development.md#coding-conventions)** for conventions.
