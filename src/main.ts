@@ -5,6 +5,7 @@ import {
   type ChaosCategory,
   clearEdgeEffects,
   clearNodeEffects,
+  exportMermaid,
   exportTopology,
   importTopology,
   injectLatencySpike,
@@ -165,6 +166,14 @@ class App {
       this.fitView();
     });
     byId<HTMLButtonElement>('export-btn').addEventListener('click', () => this.exportJson());
+    byId<HTMLButtonElement>('export-mermaid-btn').addEventListener('click', () => this.openMermaidModal());
+    byId<HTMLButtonElement>('mermaid-modal-close').addEventListener('click', () => this.closeMermaidModal());
+    byId<HTMLButtonElement>('mermaid-modal-ok').addEventListener('click', () => this.closeMermaidModal());
+    byId<HTMLElement>('mermaid-modal').addEventListener('click', e => {
+      if (e.target === e.currentTarget) this.closeMermaidModal();
+    });
+    byId<HTMLButtonElement>('mermaid-copy').addEventListener('click', () => this.copyMermaid());
+    byId<HTMLButtonElement>('mermaid-download').addEventListener('click', () => this.downloadMermaid());
     const importInput = byId<HTMLInputElement>('import-input');
     byId<HTMLButtonElement>('import-btn').addEventListener('click', () => importInput.click());
     importInput.addEventListener('change', () => {
@@ -1018,6 +1027,46 @@ class App {
     a.click();
     URL.revokeObjectURL(url);
     this.toast('exported topology');
+  }
+
+  private openMermaidModal(): void {
+    const text = exportMermaid(this.state.topology);
+    const ta = byId<HTMLTextAreaElement>('mermaid-output');
+    ta.value = text;
+    byId<HTMLElement>('mermaid-modal').classList.remove('hidden');
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.select();
+    });
+  }
+
+  private closeMermaidModal(): void {
+    byId<HTMLElement>('mermaid-modal').classList.add('hidden');
+  }
+
+  private async copyMermaid(): Promise<void> {
+    const ta = byId<HTMLTextAreaElement>('mermaid-output');
+    try {
+      await navigator.clipboard.writeText(ta.value);
+      this.toast('copied mermaid');
+    } catch {
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      this.toast('copied mermaid');
+    }
+  }
+
+  private downloadMermaid(): void {
+    const text = byId<HTMLTextAreaElement>('mermaid-output').value;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `distrosim-${Date.now()}.mmd`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.toast('downloaded mermaid');
   }
 
   private importJson(text: string): void {

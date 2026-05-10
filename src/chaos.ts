@@ -1,5 +1,6 @@
 import { nextId } from './nodes';
 import type { SimState } from './simulation';
+import { CATEGORY } from './types';
 import type {
   ChaosEventKind,
   NodeType,
@@ -203,6 +204,36 @@ export function exportTopology(topology: Topology): string {
     })),
   };
   return JSON.stringify(slim, null, 2);
+}
+
+export function exportMermaid(topology: Topology): string {
+  const lines: string[] = ['flowchart LR'];
+  if (topology.nodes.length === 0) {
+    lines.push('  %% empty topology');
+    return lines.join('\n');
+  }
+
+  const safeId = (id: string): string => id.replace(/[^A-Za-z0-9_]/g, '_');
+  const escapeLabel = (s: string): string =>
+    s.replace(/"/g, '&quot;').replace(/\n/g, ' ');
+
+  for (const n of topology.nodes) {
+    const label = `${escapeLabel(n.label)} · ${n.type}`;
+    lines.push(`  ${safeId(n.id)}["${label}"]:::${CATEGORY[n.type]}`);
+  }
+
+  if (topology.edges.length > 0) lines.push('');
+  for (const e of topology.edges) {
+    lines.push(`  ${safeId(e.fromId)} --> ${safeId(e.toId)}`);
+  }
+
+  lines.push('');
+  lines.push('  classDef client fill:#378ADD,stroke:#0b0d12,color:#fff');
+  lines.push('  classDef compute fill:#1D9E75,stroke:#0b0d12,color:#fff');
+  lines.push('  classDef data fill:#BA7517,stroke:#0b0d12,color:#fff');
+  lines.push('  classDef infra fill:#888780,stroke:#0b0d12,color:#fff');
+
+  return lines.join('\n');
 }
 
 export interface ImportedTopology {

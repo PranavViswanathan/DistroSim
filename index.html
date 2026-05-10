@@ -786,6 +786,22 @@
         padding: 6px 0;
       }
 
+      .mermaid-output {
+        width: 100%;
+        min-height: 360px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text);
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        padding: 10px 12px;
+        resize: vertical;
+        outline: none;
+      }
+      .mermaid-output:focus { border-color: var(--accent); }
+
       /* BOTTOM SPARKLINE PANEL */
       .sparkpanel {
         position: absolute;
@@ -982,12 +998,34 @@
           </select>
           <button class="btn" id="fit-btn" title="Re-center the topology in the viewport">Fit</button>
           <button class="btn" id="export-btn">Export</button>
+          <button class="btn" id="export-mermaid-btn" title="Export topology as a Mermaid diagram">Mermaid</button>
           <button class="btn" id="import-btn">Import</button>
           <input type="file" id="import-input" accept=".json,application/json" style="display: none" />
           <button class="btn primary" id="sim-toggle">Start sim</button>
           <button class="btn danger" id="sim-stop">Stop</button>
         </div>
       </header>
+
+      <div class="modal-overlay hidden" id="mermaid-modal">
+        <div class="modal-window">
+          <div class="modal-header">
+            <h2>Mermaid diagram</h2>
+            <button class="modal-close" id="mermaid-modal-close" title="Close">×</button>
+          </div>
+          <div class="modal-body">
+            <p style="margin:0 0 10px; color:var(--text-dim); font-size:11px;">
+              Paste into any Markdown renderer that supports Mermaid (GitHub, Notion,
+              mermaid.live, etc.).
+            </p>
+            <textarea id="mermaid-output" class="mermaid-output" readonly spellcheck="false"></textarea>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" id="mermaid-copy">Copy</button>
+            <button class="btn" id="mermaid-download">Download .mmd</button>
+            <button class="btn primary" id="mermaid-modal-ok">Close</button>
+          </div>
+        </div>
+      </div>
 
       <div class="modal-overlay hidden" id="status-modal">
         <div class="modal-window">
